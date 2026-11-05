@@ -4,27 +4,29 @@ A DCTL for DaVinci Resolve Studio that converts **DJI D-Log M** footage from the
 
 After this transform, one stop of exposure is one stop again, grey stays grey and highlights are no longer squashed. Grading the Osmo footage in DaVinci Wide Gamut then feels the same as grading footage from a cinema camera, for example Canon Log 2.
 
+Why grade in DaVinci Wide Gamut at all? Its gamut is much larger than Rec.709, so colours stay natural and both highlights and shadows keep their information while you work.
+
 ![Exposure consistency](docs/DLM_diagramm_streuung_en.png)
 
 ## Why this exists
 
-DJI has not published a transfer curve or a gamut for D-Log M. The only official tool is a LUT to Rec.709 (`OA6 D-LogM to Rec.709 v11.17.cube`). If you want to grade in DaVinci Wide Gamut, you are stuck with a Color Space Transform that only approximates D-Log M:
+DJI has not published a transfer curve or a gamut for D-Log M. The only official tool is a LUT to Rec.709 (`OA6 D-LogM to Rec.709 v11.17.cube`). It converts straight to Rec.709 and leaves a lot of the image information behind. If you want to grade in DaVinci Wide Gamut instead, the usual workaround in Resolve is a Color Space Transform, which only approximates D-Log M and does not hit the curve exactly:
 
 | Workflow | What goes wrong |
 |---|---|
-| **CST (DJI D-Gamut / DJI D-Log)** | D-Log M is *not* the old D-Log. D-Log M stores about twice as much code per stop. Decoding it as D-Log roughly doubles the contrast in linear light, so the image looks harsh and oversaturated. |
-| **CST (DJI D-Gamut / Rec.709)** | It looks close to the DJI LUT, but the highlights are compressed. At code 0.8, one real stop becomes about half a stop, and at code 0.9 about 0.4. Exposure changes in the grade behave unnaturally, and white clouds hit 100 % early. |
+| **CST (DJI D-Gamut / DJI D-Log)** | D-Log M is *not* D-Log, and not a "true" log profile. It stores about twice as much code per stop. Decoding it as D-Log roughly doubles the contrast in linear light, so the image becomes contrasty and oversaturated. |
+| **CST (DJI D-Gamut / Rec.709)** | It looks close to the DJI LUT, but the highlights are compressed. Compared with the LUT, one real stop becomes about half a stop at code 0.8 and about 0.4 at code 0.9. Exposure changes in the grade feel wrong, and the sky burns out early. |
 | HLG profile in camera | It bakes in an HDR look, which causes the bright halos around tree branches against the sky. |
 
 ## How the DCTL was made
 
-All measurements use a Calibrite ColorChecker Video chart (grey strips, a grey wedge and colour patches), with ISO, white balance, sharpening (−2) and noise reduction (−2) fixed.
+All measurements use a Calibrite ColorChecker Passport (grey strips, a grey wedge and colour patches), with ISO, white balance, sharpening (−2) and noise reduction (−2) fixed.
 
 **1. Curve (code → scene-linear light), measured per camera**
 
-- **Osmo Action 6, daylight:** shutter series from 1/25 to 1/6400 s at ISO 100. The light changed with the clouds. That variation was removed using the camera's own per-frame exposure meter, which DJI stores in the clip metadata. It agrees with the chart to ±0.05 stops.
+- **Osmo Action 6, daylight:** shutter series from 1/25 to 1/6400 s at ISO 100. The light changed slightly with the clouds. That variation was removed using the camera's own per-frame exposure meter, which DJI stores in the clip metadata. It agrees with the chart to ±0.05 stops.
 - **Osmo Action 6, constant lamp:** 1/25 to 1/200 s, an independent check and extra data in the deep shadows.
-- **Osmo 360 II, constant lamp:** 1/25 to 1/200 s at ISO 100, plus ISO 200, 400 and 800. ISO only acts as a gain in front of the curve, so the curve does not change.
+- **Osmo 360 II, constant lamp:** 1/25 to 1/200 s at ISO 100, plus ISO 200, 400 and 800. The 360 got its own series because its sensor handles exposure differently from the Action 6. ISO only acts as a gain in front of the curve, so the curve does not change.
 - **Fitting:** each curve is a free spline fitted to all grey patches and all channels, with no assumed formula. The residual is about 0.005 code values (rms).
 - **Black and white points:**
   - Black is code 0, confirmed with a capped-lens black frame.
@@ -54,11 +56,11 @@ The left chart shows how much light each code value stands for. The right chart 
 
 ## Tests
 
-All tests were run in DaVinci Resolve Studio 21. Each one compares the DCTL with the CST (DJI D-Gamut / Rec.709), using the same output transform for both.
+All comparisons are screenshots from DaVinci Resolve Studio 21. All variants run through the same output transform. Unless noted otherwise, the DCTL is compared with the CST (DJI D-Gamut / Rec.709).
 
 **Exposure series: does one stop stay one stop?**
 
-Eight grey patches across four stops of shutter, after compensating for the exposure. The DCTL gives flat lines. The CST with Rec.709 drifts by about 0.4 stops, and the CST with DJI D-Log by more than 1 stop.
+The same grey patches, filmed across four stops of shutter and then balanced with an exposure correction. With the DCTL the recordings line up to within 0.06 stops. The CST with Rec.709 is off by 0.39 stops, and the CST with DJI D-Log by more than a whole stop. On the Osmo 360 II the DCTL deviates by only 0.03 stops.
 
 | | CST (D-Gamut / D-Log) | CST (D-Gamut / Rec.709) | **DCTL** |
 |---|---|---|---|
@@ -71,27 +73,42 @@ The table shows the rms spread in stops. A curve fitted only on the daylight dat
 ![Exposure series](docs/DLM_diagramm_belichtungsreihe_en.png)
 ![Five clips, 4 stops apart, after exposure compensation](docs/DLM_belichtungsreihe_streifen.jpg)
 
+Five Action 6 clips from 1/400 to 1/6400 s, balanced in the DCTL with *Belichtung EV* (values calculated from the shutter time and the camera's exposure meter). The chart looks the same in all five, only the noise increases. It also shows how well the DCTL can compensate for misexposure.
+
 **Grey wedge: neutral from white to black?**
 
-Mid grey was neutralised with Offset, then R/G/B were read from the Resolve viewer.
+Mid grey was neutralised with the Offset colour wheel, then every grey step was measured again: R/G/B read from the Resolve viewer (Action 6, 1/1600 s).
 
 - **DCTL:** the channels stay within 1 to 6 values over the whole wedge. The darkest strip is slightly bluer, which comes from sky reflections on the glossy black.
 - **CST (D-Gamut / Rec.709):** the dark patches spread up to 12 values, and the two brightest patches clip at 255.
 
 ![Grey wedge](docs/DLM_diagramm_graukeil_en.png)
 
-**Branches against a bright sky.** The DCTL keeps cloud detail. The CST with Rec.709 pushes the sky to flat white, and pulling exposure down by 1 stop does not recover it.
+**High dynamic range and contrast edges (branches against a bright sky).** This is where the DCTL shows its strength. The CST burns out strong contrast edges, while the DCTL resolves them without clipping to white. Branches against the sky look less "HDR-like" and the clouds show more definition. (Action 6, 1/1250 s. The −1 stop is applied with Exposure in the HDR wheel. A small part of the sky is already clipped in camera, and with the DCTL it turns an even grey at −1 EV.)
 
 ![Tree](docs/DLM_vergleich_baum_en.jpg)
 ![Tree detail, −1 EV](docs/DLM_vergleich_baum_detail_en.jpg)
 
-**Saturated yellow and specular highlight.** With the DCTL, the reflection on the bin keeps its gradation at −1 EV. With the CST (Rec.709), it stays burnt out.
+**Saturation vs. brightness (yellow bin with sun reflection).** Saturated yellow with a specular reflection is a nightmare for sensors. To make the effect easier to see, the clip is deliberately overexposed (Action 6, 1/1250 s) and brought down by −1 EV in the grade. With the DCTL the reflection keeps its gradation, even though the bin is slightly less saturated. Saturation is easier to add later than burnt-out highlights are to repair. The yellow does not shift in hue in either variant.
 
 ![Bin detail, −1 EV](docs/DLM_vergleich_tonne_detail_en.jpg)
 
-**Look compared with the DJI LUT.** DCTL followed by an output CST with DaVinci tone mapping looks almost identical to the official DJI LUT. The difference is that you now grade in DaVinci Wide Gamut instead of on finished Rec.709 values. The clip is overexposed by about 3.5 stops, so many patches are clipped in camera.
+**And the DJI LUT?** The official LUT is the convenient way: drop it on, done. But it locks in DJI's contrasty look. With the DCTL the result looks almost the same, yet you keep the freedom to change contrast and saturation. The CST looks brighter and harder, and the brightest patches converge towards white. (Action 6, 1/800 s. The DCTL and the CST run through the same output CST with DaVinci tone mapping, Max. Input 300 nits.)
 
-![DCTL vs DJI LUT](docs/DLM_vergleich_look_en.jpg)
+![DJI LUT vs. CST vs. DCTL](docs/DLM_vergleich_look_en.jpg)
+
+So the look of the LUT is not an advantage of the LUT. The difference is where you work:
+
+- **You grade in DaVinci Wide Gamut, not on finished Rec.709 values.** The LUT already delivers the end result, and everything after it works on values calculated for a Rec.709 display. With DCTL or CST the image stays in the large working space while you grade, and the conversion for display happens at the end.
+- **Exposure and white balance behave correctly.** Because the DCTL hits the curve, one stop in Offset is one stop (test 1). On Rec.709 values, every correction also shifts the look and runs into black and white sooner.
+- **The output stays your decision.** You set tone mapping and Max. Input in the output CST and can change them later without touching the grade. With the LUT the look is built in.
+- **Osmo and Canon land in the same working space.** Footage from both cameras can use the same grade and the same output CST.
+
+The CST alone is no substitute. It has the same structure but uses the wrong curve and squashes the highlights, hence the brighter, harder image above. The benefits of this workflow only exist with a conversion that is right at the start. If you just need a finished Rec.709 result quickly, the LUT is perfectly fine.
+
+**Two cameras.** The Osmo 360 II has more highlight headroom than the Action 6, so it got its own curve. You switch between them with the *Kamera* control. The 360 also has its own colour matrix, which projects its colours onto those of the Action 6. The screenshots below show the same Osmo 360 II clip with the Action 6 curve and with the 360 curve; they were taken before the 360 matrix was added, so they show the curve only. With its own curve, sky and clouds sit higher while the mid-tones stay the same.
+
+![Osmo 360 II clip with each camera's curve](docs/DLM_vergleich_kamera_en.jpg)
 
 ## Usage
 
@@ -113,7 +130,7 @@ DCTLs require **DaVinci Resolve Studio**. The free version does not run them.
    | Belichtung EV | −6 … +6 | Exposure |
 
 5. **Grade** in DaVinci Wide Gamut / Intermediate. For white balance and exposure, use **Offset**: in DaVinci Intermediate it acts as a true linear gain.
-6. **Output transform** at timeline level: CST from DaVinci Wide Gamut / DaVinci Intermediate to Rec.709 / Gamma 2.4, with Tone Mapping *DaVinci*, *Use Custom Max. Input* and Gamut Mapping *Saturation Compression*.
+6. **Output transform** at the end of the node tree, or once at timeline level: CST from DaVinci Wide Gamut / DaVinci Intermediate to Rec.709 / Gamma 2.4, with Tone Mapping *DaVinci*, *Use Custom Max. Input* and Gamut Mapping *Saturation Compression*.
    - Max. Input ≈ **300 nits** for Action 6 projects, ≈ **360 nits** for 360 projects.
    - If you mix in another camera, for example Canon Log 2, use the value that suits that camera. The D-Log M highlights then sit a little lower, which is physically correct, and you lift them in the grade.
 
